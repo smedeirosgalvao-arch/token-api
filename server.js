@@ -478,7 +478,7 @@ app.delete('/api/tokens/:token', requireAuth, (req, res) => {
   }
 });
 
-// ==================== ROTAS DE CONFIGURAÇÃO (PROTEGIDAS) ====================
+// ==================== ROTAS DE CONFIGURAÇÃO ====================
 
 app.get('/api/get-ids', (req, res) => {
   try {
@@ -948,4 +948,22 @@ process.on('SIGTERM', () => {
   });
 });
 
-process.on('SIGINT
+process.on('SIGINT', () => {
+  console.log('\n⚠️ SIGINT recebido. Encerrando servidor...');
+  server.close(() => {
+    console.log('✅ Servidor encerrado graciosamente.');
+    process.exit(0);
+  });
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('❌ Exceção não capturada:', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Promise rejeitada não tratada:', reason);
+  process.exit(1);
+});
+
+module.exports = app;
