@@ -1,10 +1,26 @@
 const express = require('express');
 const cors = require('cors');
+const session = require('express-session');
 const app = express();
 
 // ==================== CONFIGURAÇÃO ====================
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+
+// SENHA DO ADMIN - ALTERE AQUI!
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
+// Configuração de sessão
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'chave-super-secreta-mude-isso',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 horas
+  }
+}));
 
 // Configuração de CORS
 app.use(cors({
@@ -29,7 +45,6 @@ let tokens = [
   }
 ];
 
-// Configurações de substituição de IDs
 const replacementConfigs = [
   {
     domain: 'exemplo.com',
@@ -38,6 +53,228 @@ const replacementConfigs = [
     active: true
   }
 ];
+
+// ==================== MIDDLEWARE DE AUTENTICAÇÃO ====================
+function requireAuth(req, res, next) {
+  if (req.session && req.session.authenticated) {
+    return next();
+  }
+  res.status(401).json({ 
+    success: false, 
+    error: 'Não autenticado',
+    redirect: '/login'
+  });
+}
+
+// ==================== ROTAS DE AUTENTICAÇÃO ====================
+
+// Página de Login
+app.get('/login', (req, res) => {
+  if (req.session && req.session.authenticated) {
+    return res.redirect('/');
+  }
+  
+  res.send(`
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Painel VIP</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .login-container {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      max-width: 400px;
+      width: 100%;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 2em;
+    }
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 0.9em;
+    }
+    .form-group { margin-bottom: 20px; }
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      color: #333;
+    }
+    input {
+      width: 100%;
+      padding: 15px;
+      border: 2px solid #ddd;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.3s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+    }
+    .error {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+      text-align: center;
+    }
+    .lock-icon {
+      text-align: center;
+      font-size: 3em;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="lock-icon">🔐</div>
+    <h1>Painel Administrativo</h1>
+    <p class="subtitle">Digite a senha para acessar</p>
+    
+    <div class="error" id="error"></div>
+    
+    <form onsubmit="login(event)">
+      <div class="form-group">
+        <label>Senha:</label>
+        <input 
+          type="password" 
+          id="password" 
+          placeholder="Digite a senha"
+          autocomplete="current-password"
+          required
+        >
+      </div>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+
+  <script>
+    async function login(event) {
+      event.preventDefault();
+      
+      const password = document.getElementById('password').value;
+      const errorDiv = document.getElementById('error');
+      
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          window.location.href = '/';
+        } else {
+          errorDiv.textContent = data.error || 'Senha incorreta';
+          errorDiv.style.display = 'block';
+          document.getElementById('password').value = '';
+          document.getElementById('password').focus();
+        }
+      } catch (error) {
+        errorDiv.textContent = 'Erro ao fazer login';
+        errorDiv.style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>
+  `);
+});
+
+// Rota de Login (POST)
+app.post('/api/login', (req, res) => {
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Senha não fornecida' 
+    });
+  }
+
+  if (password === ADMIN_PASSWORD) {
+    req.session.authenticated = true;
+    req.session.loginTime = new Date().toISOString();
+    
+    console.log('✅ Login bem-sucedido:', new Date().toLocaleString('pt-BR'));
+    
+    return res.json({ 
+      success: true, 
+      message: 'Login realizado com sucesso' 
+    });
+  }
+
+  console.log('❌ Tentativa de login falhou:', new Date().toLocaleString('pt-BR'));
+  
+  res.status(401).json({ 
+    success: false, 
+    error: 'Senha incorreta' 
+  });
+});
+
+// Rota de Logout
+app.post('/api/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Erro ao fazer logout' 
+      });
+    }
+    res.json({ 
+      success: true, 
+      message: 'Logout realizado com sucesso' 
+    });
+  });
+});
+
+// Verificar status de autenticação
+app.get('/api/auth-status', (req, res) => {
+  res.json({ 
+    authenticated: !!(req.session && req.session.authenticated),
+    loginTime: req.session?.loginTime || null
+  });
+});
 
 // ==================== HEALTH CHECK ====================
 app.get('/health', (req, res) => {
@@ -49,10 +286,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ==================== ROTAS DE TOKENS ====================
+// ==================== ROTAS DE TOKENS (PROTEGIDAS) ====================
 
-// Listar todos os tokens
-app.get('/api/tokens', (req, res) => {
+app.get('/api/tokens', requireAuth, (req, res) => {
   try {
     const tokensList = tokens.map(t => ({
       token: t.token,
@@ -77,7 +313,7 @@ app.get('/api/tokens', (req, res) => {
   }
 });
 
-// Validar token
+// Validar token (NÃO PROTEGIDA - para uso público)
 app.get('/api/validate-token', (req, res) => {
   try {
     const { token } = req.query;
@@ -137,8 +373,7 @@ app.get('/api/validate-token', (req, res) => {
   }
 });
 
-// Adicionar novo token
-app.post('/api/tokens', (req, res) => {
+app.post('/api/tokens', requireAuth, (req, res) => {
   try {
     const { token, userId, name, expiresInDays = 365 } = req.body;
 
@@ -186,8 +421,7 @@ app.post('/api/tokens', (req, res) => {
   }
 });
 
-// Ativar/Desativar token
-app.post('/api/tokens/:token/toggle', (req, res) => {
+app.post('/api/tokens/:token/toggle', requireAuth, (req, res) => {
   try {
     const { token } = req.params;
     const tokenData = tokens.find(t => t.token === token);
@@ -216,8 +450,7 @@ app.post('/api/tokens/:token/toggle', (req, res) => {
   }
 });
 
-// Remover token
-app.delete('/api/tokens/:token', (req, res) => {
+app.delete('/api/tokens/:token', requireAuth, (req, res) => {
   try {
     const { token } = req.params;
     const index = tokens.findIndex(t => t.token === token);
@@ -245,9 +478,8 @@ app.delete('/api/tokens/:token', (req, res) => {
   }
 });
 
-// ==================== ROTAS DE CONFIGURAÇÃO ====================
+// ==================== ROTAS DE CONFIGURAÇÃO (PROTEGIDAS) ====================
 
-// Obter configurações de IDs
 app.get('/api/get-ids', (req, res) => {
   try {
     const { token } = req.query;
@@ -282,9 +514,9 @@ app.get('/api/get-ids', (req, res) => {
   }
 });
 
-// ==================== PAINEL HTML ====================
+// ==================== PAINEL HTML (PROTEGIDO) ====================
 
-app.get('/', (req, res) => {
+app.get('/', requireAuth, (req, res) => {
   res.send(`
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -361,6 +593,14 @@ app.get('/', (req, res) => {
     .btn-warning {
       background: #f59e0b;
       color: white;
+    }
+    .btn-logout {
+      background: #6b7280;
+      color: white;
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      z-index: 1000;
     }
     table {
       width: 100%;
@@ -440,6 +680,8 @@ app.get('/', (req, res) => {
   </style>
 </head>
 <body>
+  <button class="btn-logout" onclick="logout()">🚪 Sair</button>
+
   <div class="health-indicator">
     <div class="health-dot"></div>
     <span>Servidor Online</span>
@@ -496,6 +738,11 @@ app.get('/', (req, res) => {
       try {
         const response = await fetch('/api/tokens');
         const data = await response.json();
+
+        if (!data.success && data.redirect) {
+          window.location.href = data.redirect;
+          return;
+        }
 
         if (data.success) {
           const tbody = document.getElementById('tokensBody');
@@ -626,6 +873,26 @@ app.get('/', (req, res) => {
       }
     }
 
+    async function logout() {
+      if (!confirm('Deseja realmente sair?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/logout', {
+          method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          window.location.href = '/login';
+        }
+      } catch (error) {
+        alert('Erro ao fazer logout: ' + error.message);
+      }
+    }
+
     loadTokens();
   </script>
 </body>
@@ -659,18 +926,20 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 ║  📡 Porta: ${PORT}
 ║  🌐 Ambiente: ${NODE_ENV}
 ║  🔐 Tokens: ${tokens.length}
+║  🔑 Senha Admin: ${ADMIN_PASSWORD}
 ║  ⏰ Iniciado: ${new Date().toLocaleString('pt-BR')}
 ╚═══════════════════════════════════════╝
 
 🔗 URLs:
    Local:  http://localhost:${PORT}
+   Login:  http://localhost:${PORT}/login
    Rede:   http://0.0.0.0:${PORT}
 
-🎯 Token de teste: VIP-DEMO-2024
+⚠️  IMPORTANTE: Altere a senha padrão!
+    Defina a variável ADMIN_PASSWORD no .env
   `);
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('⚠️ SIGTERM recebido. Encerrando servidor...');
   server.close(() => {
@@ -679,23 +948,4 @@ process.on('SIGTERM', () => {
   });
 });
 
-process.on('SIGINT', () => {
-  console.log('\n⚠️ SIGINT recebido. Encerrando servidor...');
-  server.close(() => {
-    console.log('✅ Servidor encerrado graciosamente.');
-    process.exit(0);
-  });
-});
-
-// Captura erros não tratados
-process.on('uncaughtException', (error) => {
-  console.error('❌ Exceção não capturada:', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Promise rejeitada não tratada:', reason);
-  process.exit(1);
-});
-
-module.exports = app;
+process.on('SIGINT
