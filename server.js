@@ -108,7 +108,7 @@ app.get('/test', (req, res) => {
 
 // Dashboard HTML
 app.get('/', (req, res) => {
-  const html = `<!DOCTYPE html>
+  res.send(`<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
@@ -133,7 +133,6 @@ button:hover{background:#5568d3}
 .btn-warning{background:#f59e0b}
 .alert{padding:15px;border-radius:8px;margin-bottom:15px;font-weight:bold}
 .alert-error{background:#fee;color:#c00;border:2px solid #c00}
-.alert-success{background:#efe;color:#0a0}
 .info{background:#e3f2fd;color:#1976d2;padding:10px;border-radius:5px;margin-top:10px;font-size:14px}
 </style>
 </head>
@@ -237,7 +236,8 @@ function displayTokens(tokensList) {
   countSpan.textContent = tokensList.length;
   container.innerHTML = '';
 
-  tokensList.forEach(function(token) {
+  for (var i = 0; i < tokensList.length; i++) {
+    var token = tokensList[i];
     var div = document.createElement('div');
     div.className = 'token-item';
     
@@ -247,15 +247,36 @@ function displayTokens(tokensList) {
     
     div.innerHTML = 
       '<div><strong>' + token.user + '</strong> - <span class="' + statusClass + '">' + statusText + '</span></div>' +
-      '<div class="token-code" onclick="copyToken(\\'\\'' + token.token + '\\'\\')">📋 ' + token.token + ' (clique para copiar)</div>' +
+      '<div class="token-code" data-token="' + token.token + '">📋 ' + token.token + ' (clique para copiar)</div>' +
       '<div style="color:#666;font-size:14px">Criado: ' + token.createdAt + '</div>' +
       '<div style="margin-top:10px">' +
-      '<button class="btn-small btn-warning" onclick="toggleToken(\\'\\'' + token.token + '\\'\\'')">' + toggleText + '</button>' +
-      '<button class="btn-small btn-danger" onclick="deleteToken(\\'\\'' + token.token + '\\'\\')">🗑️ Deletar</button>' +
+      '<button class="btn-small btn-warning" data-action="toggle" data-token="' + token.token + '">' + toggleText + '</button>' +
+      '<button class="btn-small btn-danger" data-action="delete" data-token="' + token.token + '">🗑️ Deletar</button>' +
       '</div>';
     
     container.appendChild(div);
-  });
+  }
+  
+  // Adicionar event listeners para os tokens
+  var tokenCodes = container.querySelectorAll('.token-code');
+  for (var i = 0; i < tokenCodes.length; i++) {
+    tokenCodes[i].addEventListener('click', function() {
+      copyToken(this.getAttribute('data-token'));
+    });
+  }
+  
+  var buttons = container.querySelectorAll('button[data-action]');
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener('click', function() {
+      var action = this.getAttribute('data-action');
+      var token = this.getAttribute('data-token');
+      if (action === 'toggle') {
+        toggleToken(token);
+      } else if (action === 'delete') {
+        deleteToken(token);
+      }
+    });
+  }
 }
 
 function generateToken() {
@@ -275,7 +296,7 @@ function generateToken() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      alert('✅ Token gerado!\\n\\n' + data.token + '\\n\\nCopie e envie para o usuário.');
+      alert('Token gerado com sucesso!\\n\\nToken: ' + data.token + '\\n\\nCopie e envie para o usuário.');
       userInput.value = '';
       loadTokens();
     } else {
@@ -315,7 +336,7 @@ function deleteToken(token) {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      alert('✅ Token deletado!');
+      alert('Token deletado com sucesso!');
       loadTokens();
     }
   })
@@ -339,7 +360,7 @@ function loadTokens() {
 function copyToken(token) {
   if (navigator.clipboard) {
     navigator.clipboard.writeText(token).then(function() {
-      alert('✅ Token copiado: ' + token);
+      alert('Token copiado: ' + token);
     });
   } else {
     prompt('Copie o token:', token);
@@ -349,7 +370,7 @@ function copyToken(token) {
 // Event listeners
 document.addEventListener('DOMContentLoaded', function() {
   console.log('=== PAINEL CARREGADO ===');
-  console.log('Versão: JavaScript puro');
+  console.log('Versão: JavaScript ES5');
   console.log('Senha padrão: admin123');
   
   var loginBtn = document.getElementById('loginBtn');
@@ -385,16 +406,14 @@ document.addEventListener('DOMContentLoaded', function() {
 console.log('=== SCRIPT CARREGADO ===');
 </script>
 </body>
-</html>`;
-  
-  res.send(html);
+</html>`);
 });
 
 // Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log('========================================');
-  console.log('✅ Servidor Token VIP Online!');
+  console.log('Servidor Token VIP Online!');
   console.log('Porta:', PORT);
   console.log('Senha Admin:', ADMIN_PASSWORD);
   console.log('========================================');
