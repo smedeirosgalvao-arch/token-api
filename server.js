@@ -2,520 +2,654 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-app.use(cors());
+// Configuração de CORS
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'DELETE'],
+  allowedHeaders: ['Content-Type']
+}));
+
 app.use(express.json());
 
-// BANCO DE TOKENS
-let tokens = {
-  'VIP-2024-ABC123XYZ': { 
-    user: 'João Silva', 
-    email: 'joao@email.com',
-    active: true, 
-    createdAt: '2024-12-20',
-    expiresAt: '2025-12-20',
-    lastUsed: null,
-    usageCount: 0,
-    notes: 'Cliente premium'
-  },
-  'VIP-2024-DEF456UVW': { 
-    user: 'Maria Santos',
-    email: 'maria@email.com', 
-    active: true, 
-    createdAt: '2024-12-21',
-    expiresAt: '2025-12-21',
-    lastUsed: null,
-    usageCount: 0,
-    notes: ''
+// ==================== DATABASE ====================
+// Armazenamento em memória (substitua por banco de dados real em produção)
+let tokens = [
+  {
+    token: 'VIP-DEMO-2024',
+    userId: 'user001',
+    name: 'Usuário Demo',
+    active: true,
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() // 1 ano
   }
-};
+];
 
-// 🎯 CONFIGURAÇÃO DE URLS DAS CASAS (ATUALIZÁVEL REMOTAMENTE!)
-let activeSites = {
-  sites: [
-    {
-      id: 1,
-      name: 'Manga Pinheiro',
-      urls: [
-        'manga-pinheiro-pg.com/game/wrap',
-        'manga-pinheiro-pg.com/api/game/jump'
-      ],
-      active: true,
-      addedAt: '2024-12-20'
-    },
-    {
-      id: 2,
-      name: 'Manga Presente',
-      urls: [
-        'manga-presente-pg.com/game/wrap',
-        'manga-presente-pg.com/api/game/jump'
-      ],
-      active: true, // Inativa até você ativar
-      addedAt: '2024-12-23'
-    }
-  ],
-  lastUpdate: new Date().toISOString()
-};
-
-// 🎯 CONFIGURAÇÃO DE IDs (para content.js)
-let activeIds = {
-  replacements: [
-    {
-      domain: 'uimz80fgj.com',
-      oldId: '2012025',
-      newId: '1738001',
-      active: true
-    }
-  ],
-  lastUpdate: new Date().toISOString()
-};
-
-// LOG DE ACESSOS
-let accessLogs = [];
-let invalidAttempts = [];
-let adminLogs = [];
-
-const ADMIN_PASSWORD = 'admin123';
-
-function logAdmin(action, details) {
-  adminLogs.push({
-    timestamp: new Date().toISOString(),
-    action: action,
-    details: details
-  });
-  if (adminLogs.length > 100) {
-    adminLogs = adminLogs.slice(-100);
+// Configurações de substituição de IDs
+const replacementConfigs = [
+  {
+    domain: 'exemplo.com',
+    oldId: '2012025',
+    newId: '1738001',
+    active: true
   }
-}
+];
 
-// API: Validar token
-app.get('/api/validate-token', (req, res) => {
-  const { token } = req.query;
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  const userAgent = req.headers['user-agent'];
-  
-  if (!token) {
-    return res.json({ valid: false, message: 'Token não fornecido' });
-  }
+// ==================== ROTAS DE TOKENS ====================
 
-  const tokenData = tokens[token];
-
-  if (!tokenData || !tokenData.active) {
-    invalidAttempts.push({
-      token: token,
-      ip: ip,
-      userAgent: userAgent,
-      timestamp: new Date().toISOString(),
-      reason: !tokenData ? 'Token não existe' : 'Token inativo'
+// 🔍 Listar todos os tokens
+app.get('/api/tokens', (req, res) => {
+  try {
+    console.log('📋 Listando tokens...');
+    const tokensList = tokens.map(t => ({
+      token: t.token,
+      userId: t.userId,
+      name: t.name,
+      active: t.active,
+      createdAt: t.createdAt,
+      expiresAt: t.expiresAt
+    }));
+    
+    res.json({
+      success: true,
+      count: tokensList.length,
+      tokens: tokensList
     });
-    
-    if (invalidAttempts.length > 50) {
-      invalidAttempts = invalidAttempts.slice(-50);
-    }
-    
-    return res.json({ valid: false, message: 'Token inválido' });
+  } catch (error) {
+    console.error('❌ Erro ao listar tokens:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao listar tokens' 
+    });
   }
-
-  // Verifica expiração
-  if (tokenData.expiresAt) {
-    const today = new Date().toISOString().split('T')[0];
-    if (today > tokenData.expiresAt) {
-      return res.json({ valid: false, message: 'Token expirado' });
-    }
-  }
-
-  // Atualiza dados de uso
-  tokenData.lastUsed = new Date().toISOString();
-  tokenData.usageCount = (tokenData.usageCount || 0) + 1;
-
-  accessLogs.push({
-    token: token,
-    user: tokenData.user,
-    ip: ip,
-    userAgent: userAgent,
-    timestamp: new Date().toISOString()
-  });
-
-  if (accessLogs.length > 100) {
-    accessLogs = accessLogs.slice(-100);
-  }
-
-  res.json({ valid: true, active: true, user: tokenData.user });
 });
 
-// 🆕 API: Obter URLs ativas das casas
-app.get('/api/get-sites', (req, res) => {
-  const { token } = req.query;
-  
-  if (!token) {
-    return res.json({ success: false, message: 'Token não fornecido' });
+// ✅ Validar token
+app.get('/api/validate-token', (req, res) => {
+  try {
+    const { token } = req.query;
+    
+    console.log('🔍 Validando token:', token);
+
+    if (!token) {
+      return res.status(400).json({ 
+        valid: false, 
+        active: false,
+        error: 'Token não fornecido' 
+      });
+    }
+
+    const tokenData = tokens.find(t => t.token === token);
+
+    if (!tokenData) {
+      console.log('❌ Token não encontrado');
+      return res.json({ 
+        valid: false, 
+        active: false,
+        error: 'Token não encontrado'
+      });
+    }
+
+    // Verifica se o token está ativo
+    if (!tokenData.active) {
+      console.log('⚠️ Token inativo');
+      return res.json({ 
+        valid: true, 
+        active: false,
+        error: 'Token inativo'
+      });
+    }
+
+    // Verifica se o token expirou
+    const now = new Date();
+    const expirationDate = new Date(tokenData.expiresAt);
+    
+    if (now > expirationDate) {
+      console.log('⚠️ Token expirado');
+      return res.json({ 
+        valid: true, 
+        active: false,
+        error: 'Token expirado'
+      });
+    }
+
+    console.log('✅ Token válido e ativo');
+    res.json({ 
+      valid: true, 
+      active: true,
+      userId: tokenData.userId,
+      name: tokenData.name,
+      expiresAt: tokenData.expiresAt
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao validar token:', error);
+    res.status(500).json({ 
+      valid: false, 
+      active: false,
+      error: 'Erro no servidor' 
+    });
   }
-
-  const tokenData = tokens[token];
-  
-  if (!tokenData || !tokenData.active) {
-    return res.json({ success: false, message: 'Token inválido' });
-  }
-
-  // Retorna apenas sites ativos
-  const activeSitesList = activeSites.sites
-    .filter(site => site.active)
-    .flatMap(site => site.urls);
-
-  res.json({ 
-    success: true, 
-    urls: activeSitesList,
-    lastUpdate: activeSites.lastUpdate
-  });
 });
 
-// 🆕 API: Obter configurações de IDs (para content.js)
+// ➕ Adicionar novo token
+app.post('/api/tokens', (req, res) => {
+  try {
+    const { token, userId, name, expiresInDays = 365 } = req.body;
+
+    console.log('➕ Adicionando novo token:', { token, userId, name });
+
+    if (!token || !userId || !name) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Token, userId e name são obrigatórios' 
+      });
+    }
+
+    // Verifica se o token já existe
+    const existingToken = tokens.find(t => t.token === token);
+    if (existingToken) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Token já existe' 
+      });
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000);
+
+    const newToken = {
+      token,
+      userId,
+      name,
+      active: true,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString()
+    };
+
+    tokens.push(newToken);
+
+    console.log('✅ Token adicionado com sucesso');
+    res.json({ 
+      success: true, 
+      token: newToken,
+      message: 'Token criado com sucesso'
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao adicionar token:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao adicionar token' 
+    });
+  }
+});
+
+// 🔄 Ativar/Desativar token
+app.post('/api/tokens/:token/toggle', (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    console.log('🔄 Alternando status do token:', token);
+
+    const tokenData = tokens.find(t => t.token === token);
+
+    if (!tokenData) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Token não encontrado' 
+      });
+    }
+
+    tokenData.active = !tokenData.active;
+
+    console.log(`✅ Token ${tokenData.active ? 'ativado' : 'desativado'}`);
+    res.json({ 
+      success: true, 
+      token: tokenData,
+      message: `Token ${tokenData.active ? 'ativado' : 'desativado'}`
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao alternar token:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao alternar status' 
+    });
+  }
+});
+
+// ❌ Remover token
+app.delete('/api/tokens/:token', (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    console.log('❌ Removendo token:', token);
+
+    const index = tokens.findIndex(t => t.token === token);
+
+    if (index === -1) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Token não encontrado' 
+      });
+    }
+
+    tokens.splice(index, 1);
+
+    console.log('✅ Token removido com sucesso');
+    res.json({ 
+      success: true, 
+      message: 'Token removido com sucesso' 
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao remover token:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao remover token' 
+    });
+  }
+});
+
+// ==================== ROTAS DE CONFIGURAÇÃO ====================
+
+// 📋 Obter configurações de IDs
 app.get('/api/get-ids', (req, res) => {
-  const { token } = req.query;
-  
-  if (!token) {
-    return res.json({ success: false, message: 'Token não fornecido' });
+  try {
+    const { token } = req.query;
+
+    console.log('📋 Buscando configurações para token:', token);
+
+    if (!token) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Token não fornecido' 
+      });
+    }
+
+    // Valida o token
+    const tokenData = tokens.find(t => t.token === token && t.active);
+
+    if (!tokenData) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'Token inválido ou inativo' 
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      replacements: replacementConfigs.filter(c => c.active)
+    });
+
+  } catch (error) {
+    console.error('❌ Erro ao obter configurações:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Erro ao obter configurações' 
+    });
   }
-
-  const tokenData = tokens[token];
-  
-  if (!tokenData || !tokenData.active) {
-    return res.json({ success: false, message: 'Token inválido' });
-  }
-
-  const activeReplacements = activeIds.replacements.filter(r => r.active);
-
-  res.json({ 
-    success: true, 
-    replacements: activeReplacements,
-    lastUpdate: activeIds.lastUpdate
-  });
 });
 
-// 🆕 ADMIN: Listar todos os sites
-app.get('/api/admin/list-sites', (req, res) => {
-  const { password } = req.query;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
+// ==================== PAINEL DE ADMINISTRAÇÃO ====================
 
-  res.json({ sites: activeSites.sites });
-});
-
-// 🆕 ADMIN: Adicionar novo site
-app.post('/api/admin/add-site', (req, res) => {
-  const { password, name, urls } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const newSite = {
-    id: activeSites.sites.length + 1,
-    name: name,
-    urls: urls, // Array de URLs
-    active: true,
-    addedAt: new Date().toISOString().split('T')[0]
-  };
-
-  activeSites.sites.push(newSite);
-  activeSites.lastUpdate = new Date().toISOString();
-
-  logAdmin('SITE_ADDED', `Site ${name} adicionado com ${urls.length} URLs`);
-
-  res.json({ success: true, site: newSite });
-});
-
-// 🆕 ADMIN: Ativar/Desativar site
-app.post('/api/admin/toggle-site', (req, res) => {
-  const { password, siteId } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const site = activeSites.sites.find(s => s.id === siteId);
-  
-  if (!site) {
-    return res.status(404).json({ error: 'Site não encontrado' });
-  }
-
-  site.active = !site.active;
-  activeSites.lastUpdate = new Date().toISOString();
-
-  logAdmin('SITE_TOGGLED', `Site ${site.name} ${site.active ? 'ativado' : 'desativado'}`);
-
-  res.json({ success: true, active: site.active });
-});
-
-// 🆕 ADMIN: Deletar site
-app.post('/api/admin/delete-site', (req, res) => {
-  const { password, siteId } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const index = activeSites.sites.findIndex(s => s.id === siteId);
-  
-  if (index === -1) {
-    return res.status(404).json({ error: 'Site não encontrado' });
-  }
-
-  const siteName = activeSites.sites[index].name;
-  activeSites.sites.splice(index, 1);
-  activeSites.lastUpdate = new Date().toISOString();
-
-  logAdmin('SITE_DELETED', `Site ${siteName} deletado`);
-
-  res.json({ success: true });
-});
-
-// 🆕 ADMIN: Editar URLs de um site
-app.post('/api/admin/edit-site', (req, res) => {
-  const { password, siteId, name, urls } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const site = activeSites.sites.find(s => s.id === siteId);
-  
-  if (!site) {
-    return res.status(404).json({ error: 'Site não encontrado' });
-  }
-
-  if (name) site.name = name;
-  if (urls) site.urls = urls;
-  activeSites.lastUpdate = new Date().toISOString();
-
-  logAdmin('SITE_EDITED', `Site ${site.name} editado`);
-
-  res.json({ success: true, site: site });
-});
-
-// APIs de Token (mantidas como estavam)
-app.post('/api/generate-token', (req, res) => {
-  const { user, email, password, expiresInDays, notes } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const newToken = 'VIP-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
-  
-  let expiresAt = null;
-  if (expiresInDays && expiresInDays > 0) {
-    const expDate = new Date();
-    expDate.setDate(expDate.getDate() + parseInt(expiresInDays));
-    expiresAt = expDate.toISOString().split('T')[0];
-  }
-
-  tokens[newToken] = {
-    user: user || 'Sem nome',
-    email: email || '',
-    active: true,
-    createdAt: new Date().toISOString().split('T')[0],
-    expiresAt: expiresAt,
-    lastUsed: null,
-    usageCount: 0,
-    notes: notes || ''
-  };
-
-  logAdmin('TOKEN_CREATED', `Token ${newToken} criado para ${user}`);
-
-  res.json({ success: true, token: newToken });
-});
-
-app.post('/api/toggle-token', (req, res) => {
-  const { token, password } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  if (!tokens[token]) {
-    return res.status(404).json({ error: 'Token não encontrado' });
-  }
-
-  tokens[token].active = !tokens[token].active;
-  
-  logAdmin('TOKEN_TOGGLED', `Token ${token} ${tokens[token].active ? 'ativado' : 'desativado'}`);
-
-  res.json({ success: true, active: tokens[token].active });
-});
-
-app.post('/api/delete-token', (req, res) => {
-  const { token, password } = req.body;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  if (!tokens[token]) {
-    return res.status(404).json({ error: 'Token não encontrado' });
-  }
-
-  const userName = tokens[token].user;
-  delete tokens[token];
-  
-  logAdmin('TOKEN_DELETED', `Token ${token} (${userName}) deletado`);
-
-  res.json({ success: true });
-});
-
-app.get('/api/list-tokens', (req, res) => {
-  const { password } = req.query;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const tokenList = Object.entries(tokens).map(([token, data]) => ({
-    token,
-    ...data
-  }));
-
-  res.json({ tokens: tokenList });
-});
-
-app.get('/api/stats', (req, res) => {
-  const { password } = req.query;
-  
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ error: 'Senha incorreta' });
-  }
-
-  const total = Object.keys(tokens).length;
-  const active = Object.values(tokens).filter(t => t.active).length;
-  const inactive = total - active;
-  
-  const today = new Date();
-  const in7days = new Date();
-  in7days.setDate(today.getDate() + 7);
-  const todayStr = today.toISOString().split('T')[0];
-  const in7daysStr = in7days.toISOString().split('T')[0];
-  
-  const expiringSoon = Object.values(tokens).filter(t => 
-    t.expiresAt && t.expiresAt >= todayStr && t.expiresAt <= in7daysStr
-  ).length;
-
-  const expired = Object.values(tokens).filter(t => 
-    t.expiresAt && t.expiresAt < todayStr
-  ).length;
-
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const usesToday = accessLogs.filter(log => 
-    new Date(log.timestamp) >= todayStart
-  ).length;
-
-  const invalidToday = invalidAttempts.filter(log => 
-    new Date(log.timestamp) >= todayStart
-  ).length;
-
-  res.json({
-    total,
-    active,
-    inactive,
-    expired,
-    expiringSoon,
-    usesToday,
-    invalidToday,
-    totalAccessLogs: accessLogs.length,
-    totalInvalidAttempts: invalidAttempts.length,
-    totalSites: activeSites.sites.length,
-    activeSites: activeSites.sites.filter(s => s.active).length
-  });
-});
-
-app.get('/test', (req, res) => {
-  res.json({ 
-    status: 'online',
-    message: 'API funcionando!',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Dashboard HTML (simplificado - você pode melhorar depois)
+// Página HTML do painel
 app.get('/', (req, res) => {
-  res.send(`<!DOCTYPE html>
-<html>
+  res.send(`
+<!DOCTYPE html>
+<html lang="pt-BR">
 <head>
-<meta charset="UTF-8">
-<title>🔐 Painel Admin VIP</title>
-<style>
-body{font-family:Arial,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);padding:20px;margin:0}
-.container{max-width:1200px;margin:0 auto}
-.card{background:#fff;border-radius:15px;padding:25px;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,.2)}
-h1{color:#667eea;margin:0 0 20px}
-h2{color:#333;margin:0 0 15px}
-input,button{padding:12px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin:5px}
-button{background:#667eea;color:#fff;border:none;cursor:pointer;font-weight:bold}
-button:hover{background:#5568d3}
-.site-item{background:#f5f5f5;padding:15px;border-radius:8px;margin:10px 0}
-.hidden{display:none}
-.badge{display:inline-block;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:bold;margin:5px}
-.badge-active{background:#d1fae5;color:#065f46}
-.badge-inactive{background:#fee2e2;color:#991b1b}
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel de Tokens VIP</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 2.5em;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    .card {
+      background: white;
+      border-radius: 15px;
+      padding: 25px;
+      margin-bottom: 25px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #333;
+    }
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    button {
+      padding: 12px 25px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+    .btn-danger {
+      background: #e74c3c;
+      color: white;
+    }
+    .btn-danger:hover {
+      background: #c0392b;
+    }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+    .btn-warning {
+      background: #f59e0b;
+      color: white;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 12px;
+      text-align: left;
+    }
+    td {
+      padding: 12px;
+      border-bottom: 1px solid #eee;
+    }
+    tr:hover {
+      background: #f8f9fa;
+    }
+    .status {
+      padding: 5px 10px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .status-active {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .status-inactive {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+    .stat-number {
+      font-size: 2.5em;
+      font-weight: bold;
+      color: #667eea;
+    }
+    .stat-label {
+      color: #666;
+      margin-top: 5px;
+    }
+  </style>
 </head>
 <body>
-<div class="container">
-<div class="card">
-<h1>🔐 Painel Admin VIP</h1>
-<input type="password" id="adminPassword" placeholder="Senha admin">
-<button id="loginBtn">Entrar</button>
-</div>
+  <div class="container">
+    <h1>🔐 Painel de Tokens VIP</h1>
+    
+    <div class="stats" id="stats"></div>
 
-<div id="dashboard" class="hidden">
-<div class="card">
-<h2>🏠 Gerenciar Sites/Casas</h2>
-<button onclick="showAddSite()">➕ Adicionar Nova Casa</button>
-<div id="sitesList"></div>
-</div>
+    <div class="card">
+      <h2>➕ Adicionar Novo Token</h2>
+      <div class="form-group">
+        <label>Token:</label>
+        <input type="text" id="newToken" placeholder="Ex: VIP-2024-ABC123">
+      </div>
+      <div class="form-group">
+        <label>User ID:</label>
+        <input type="text" id="newUserId" placeholder="Ex: user001">
+      </div>
+      <div class="form-group">
+        <label>Nome:</label>
+        <input type="text" id="newName" placeholder="Ex: João Silva">
+      </div>
+      <div class="form-group">
+        <label>Validade (dias):</label>
+        <input type="number" id="expiresInDays" value="365">
+      </div>
+      <button class="btn-primary" onclick="addToken()">Criar Token</button>
+    </div>
 
-<div class="card">
-<h2>🎫 Gerenciar Tokens</h2>
-<button onclick="location.reload()">Ver Tokens</button>
-</div>
-</div>
+    <div class="card">
+      <h2>📋 Tokens Cadastrados</h2>
+      <button class="btn-primary" onclick="loadTokens()">🔄 Atualizar Lista</button>
+      <table id="tokensTable">
+        <thead>
+          <tr>
+            <th>Token</th>
+            <th>User ID</th>
+            <th>Nome</th>
+            <th>Status</th>
+            <th>Criado</th>
+            <th>Expira</th>
+            <th>Ações</th>
+          </tr>
+        </thead>
+        <tbody id="tokensBody"></tbody>
+      </table>
+    </div>
+  </div>
 
-<div id="addSiteModal" class="hidden">
-<div class="card">
-<h2>➕ Adicionar Nova Casa</h2>
-<input type="text" id="siteName" placeholder="Nome da casa (ex: Manga Presente)">
-<input type="text" id="siteUrl1" placeholder="URL 1 (ex: manga-presente-pg.com/game/wrap)">
-<input type="text" id="siteUrl2" placeholder="URL 2 (ex: manga-presente-pg.com/api/game/jump)">
-<button onclick="addSite()">Adicionar</button>
-<button onclick="closeAddSite()">Cancelar</button>
-</div>
-</div>
-</div>
+  <script>
+    async function loadTokens() {
+      try {
+        const response = await fetch('/api/tokens');
+        const data = await response.json();
 
-<script>
-var adminPassword='';
-function login(){adminPassword=document.getElementById('adminPassword').value;if(!adminPassword){alert('Digite a senha!');return}loadSites()}
-function loadSites(){fetch('/api/admin/list-sites?password='+encodeURIComponent(adminPassword)).then(r=>r.json()).then(d=>{if(d.error){alert('Senha incorreta!');return}document.getElementById('dashboard').classList.remove('hidden');displaySites(d.sites)})}
-function displaySites(sites){var c=document.getElementById('sitesList');c.innerHTML='';sites.forEach(s=>{var div=document.createElement('div');div.className='site-item';div.innerHTML='<strong>'+s.name+'</strong> <span class="badge '+(s.active?'badge-active':'badge-inactive')+'">'+(s.active?'✅ ATIVO':'❌ INATIVO')+'</span><br><small>'+s.urls.join(', ')+'</small><br><button onclick="toggleSite('+s.id+')">'+(s.active?'Desativar':'Ativar')+'</button> <button onclick="deleteSite('+s.id+')">🗑️ Deletar</button>';c.appendChild(div)})}
-function toggleSite(id){fetch('/api/admin/toggle-site',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({siteId:id,password:adminPassword})}).then(r=>r.json()).then(d=>{if(d.success)loadSites()})}
-function deleteSite(id){if(!confirm('Deletar esta casa?'))return;fetch('/api/admin/delete-site',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({siteId:id,password:adminPassword})}).then(r=>r.json()).then(d=>{if(d.success)loadSites()})}
-function showAddSite(){document.getElementById('addSiteModal').classList.remove('hidden')}
-function closeAddSite(){document.getElementById('addSiteModal').classList.add('hidden')}
-function addSite(){var name=document.getElementById('siteName').value;var url1=document.getElementById('siteUrl1').value;var url2=document.getElementById('siteUrl2').value;if(!name||!url1){alert('Preencha nome e pelo menos 1 URL!');return}var urls=[url1];if(url2)urls.push(url2);fetch('/api/admin/add-site',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,urls:urls,password:adminPassword})}).then(r=>r.json()).then(d=>{if(d.success){alert('Casa adicionada!');closeAddSite();loadSites()}})}
-document.getElementById('loginBtn').addEventListener('click',login);
-</script>
+        if (data.success) {
+          const tbody = document.getElementById('tokensBody');
+          tbody.innerHTML = '';
+
+          let activeCount = 0;
+          let inactiveCount = 0;
+
+          data.tokens.forEach(token => {
+            if (token.active) activeCount++;
+            else inactiveCount++;
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = \`
+              <td><strong>\${token.token}</strong></td>
+              <td>\${token.userId}</td>
+              <td>\${token.name}</td>
+              <td>
+                <span class="status status-\${token.active ? 'active' : 'inactive'}">
+                  \${token.active ? '✅ Ativo' : '❌ Inativo'}
+                </span>
+              </td>
+              <td>\${new Date(token.createdAt).toLocaleDateString('pt-BR')}</td>
+              <td>\${new Date(token.expiresAt).toLocaleDateString('pt-BR')}</td>
+              <td>
+                <button class="btn-warning" onclick="toggleToken('\${token.token}')">
+                  \${token.active ? '⏸️ Desativar' : '▶️ Ativar'}
+                </button>
+                <button class="btn-danger" onclick="deleteToken('\${token.token}')">🗑️ Remover</button>
+              </td>
+            \`;
+            tbody.appendChild(tr);
+          });
+
+          // Atualiza estatísticas
+          document.getElementById('stats').innerHTML = \`
+            <div class="stat-card">
+              <div class="stat-number">\${data.count}</div>
+              <div class="stat-label">Total de Tokens</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" style="color: #10b981">\${activeCount}</div>
+              <div class="stat-label">Tokens Ativos</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-number" style="color: #e74c3c">\${inactiveCount}</div>
+              <div class="stat-label">Tokens Inativos</div>
+            </div>
+          \`;
+        }
+      } catch (error) {
+        alert('Erro ao carregar tokens: ' + error.message);
+      }
+    }
+
+    async function addToken() {
+      const token = document.getElementById('newToken').value.trim();
+      const userId = document.getElementById('newUserId').value.trim();
+      const name = document.getElementById('newName').value.trim();
+      const expiresInDays = parseInt(document.getElementById('expiresInDays').value);
+
+      if (!token || !userId || !name) {
+        alert('Preencha todos os campos!');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/tokens', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token, userId, name, expiresInDays })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert('✅ Token criado com sucesso!');
+          document.getElementById('newToken').value = '';
+          document.getElementById('newUserId').value = '';
+          document.getElementById('newName').value = '';
+          loadTokens();
+        } else {
+          alert('❌ Erro: ' + data.error);
+        }
+      } catch (error) {
+        alert('Erro ao criar token: ' + error.message);
+      }
+    }
+
+    async function toggleToken(token) {
+      try {
+        const response = await fetch(\`/api/tokens/\${token}/toggle\`, {
+          method: 'POST'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert(data.message);
+          loadTokens();
+        } else {
+          alert('❌ Erro: ' + data.error);
+        }
+      } catch (error) {
+        alert('Erro ao alternar token: ' + error.message);
+      }
+    }
+
+    async function deleteToken(token) {
+      if (!confirm(\`Tem certeza que deseja remover o token \${token}?\`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(\`/api/tokens/\${token}\`, {
+          method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          alert('✅ Token removido com sucesso!');
+          loadTokens();
+        } else {
+          alert('❌ Erro: ' + data.error);
+        }
+      } catch (error) {
+        alert('Erro ao remover token: ' + error.message);
+      }
+    }
+
+    // Carrega tokens ao iniciar
+    loadTokens();
+  </script>
 </body>
-</html>`);
+</html>
+  `);
 });
 
+// ==================== INICIAR SERVIDOR ====================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('========================================');
-  console.log('🚀 Servidor Token VIP Online!');
-  console.log('📡 Porta:', PORT);
-  console.log('🔑 Senha Admin:', ADMIN_PASSWORD);
-  console.log('🏠 Sites ativos:', activeSites.sites.filter(s => s.active).length);
-  console.log('========================================');
-});
 
+app.listen(PORT, () => {
+  console.log(`
+╔═══════════════════════════════════════╗
+║   🚀 SERVIDOR INICIADO COM SUCESSO   ║
+╠═══════════════════════════════════════╣
+║  📡 Porta: ${PORT}                     
+║  🌐 URL: http://localhost:${PORT}     
+║  🔐 Painel: http://localhost:${PORT}  
+╚═══════════════════════════════════════╝
+
+📋 Endpoints disponíveis:
+  GET  /                        - Painel de administração
+  GET  /api/tokens              - Listar tokens
+  GET  /api/validate-token      - Validar token
+  POST /api/tokens              - Adicionar token
+  POST /api/tokens/:token/toggle - Ativar/Desativar
+  DELETE /api/tokens/:token     - Remover token
+  GET  /api/get-ids             - Obter configurações
+
+🎯 Token de teste: VIP-DEMO-2024
+  `);
+});
