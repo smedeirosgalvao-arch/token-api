@@ -1,655 +1,227 @@
-const express = require('express');
-const cors = require('cors');
-const app = express();
+// ==================== test-server.js ====================
+// Script para testar o servidor automaticamente
 
-// Configuração de CORS
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type']
-}));
+const BASE_URL = 'http://localhost:3000';
 
-app.use(express.json());
+console.log('🧪 Iniciando testes do servidor...\n');
 
-// ==================== DATABASE ====================
-// Armazenamento em memória (substitua por banco de dados real em produção)
-let tokens = [
-  {
-    token: 'VIP-DEMO-2024',
-    userId: 'user001',
-    name: 'Usuário Demo',
-    active: true,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() // 1 ano
-  }
-];
+async function runTests() {
+  let testsPassed = 0;
+  let testsFailed = 0;
 
-// Configurações de substituição de IDs
-const replacementConfigs = [
-  {
-    domain: 'exemplo.com',
-    oldId: '2012025',
-    newId: '1738001',
-    active: true
-  }
-];
-
-// ==================== ROTAS DE TOKENS ====================
-
-// 🔍 Listar todos os tokens
-app.get('/api/tokens', (req, res) => {
+  // Teste 1: Verificar se o servidor está online
+  console.log('📝 Teste 1: Verificar se o servidor está online');
   try {
-    console.log('📋 Listando tokens...');
-    const tokensList = tokens.map(t => ({
-      token: t.token,
-      userId: t.userId,
-      name: t.name,
-      active: t.active,
-      createdAt: t.createdAt,
-      expiresAt: t.expiresAt
-    }));
-    
-    res.json({
-      success: true,
-      count: tokensList.length,
-      tokens: tokensList
-    });
+    const response = await fetch(`${BASE_URL}/api/tokens`);
+    if (response.ok) {
+      console.log('✅ Servidor está online\n');
+      testsPassed++;
+    } else {
+      throw new Error('Servidor retornou erro');
+    }
   } catch (error) {
-    console.error('❌ Erro ao listar tokens:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro ao listar tokens' 
-    });
+    console.log('❌ Servidor está offline ou não responde');
+    console.log('   Certifique-se de que o servidor está rodando: node server.js\n');
+    testsFailed++;
+    return;
   }
-});
 
-// ✅ Validar token
-app.get('/api/validate-token', (req, res) => {
+  // Teste 2: Listar tokens
+  console.log('📝 Teste 2: Listar tokens');
   try {
-    const { token } = req.query;
+    const response = await fetch(`${BASE_URL}/api/tokens`);
+    const data = await response.json();
     
-    console.log('🔍 Validando token:', token);
-
-    if (!token) {
-      return res.status(400).json({ 
-        valid: false, 
-        active: false,
-        error: 'Token não fornecido' 
-      });
+    if (data.success && Array.isArray(data.tokens)) {
+      console.log(`✅ Tokens listados com sucesso (${data.count} tokens)`);
+      console.log(`   Tokens encontrados: ${data.tokens.map(t => t.token).join(', ')}\n`);
+      testsPassed++;
+    } else {
+      throw new Error('Formato de resposta inválido');
     }
-
-    const tokenData = tokens.find(t => t.token === token);
-
-    if (!tokenData) {
-      console.log('❌ Token não encontrado');
-      return res.json({ 
-        valid: false, 
-        active: false,
-        error: 'Token não encontrado'
-      });
-    }
-
-    // Verifica se o token está ativo
-    if (!tokenData.active) {
-      console.log('⚠️ Token inativo');
-      return res.json({ 
-        valid: true, 
-        active: false,
-        error: 'Token inativo'
-      });
-    }
-
-    // Verifica se o token expirou
-    const now = new Date();
-    const expirationDate = new Date(tokenData.expiresAt);
-    
-    if (now > expirationDate) {
-      console.log('⚠️ Token expirado');
-      return res.json({ 
-        valid: true, 
-        active: false,
-        error: 'Token expirado'
-      });
-    }
-
-    console.log('✅ Token válido e ativo');
-    res.json({ 
-      valid: true, 
-      active: true,
-      userId: tokenData.userId,
-      name: tokenData.name,
-      expiresAt: tokenData.expiresAt
-    });
-
   } catch (error) {
-    console.error('❌ Erro ao validar token:', error);
-    res.status(500).json({ 
-      valid: false, 
-      active: false,
-      error: 'Erro no servidor' 
-    });
+    console.log('❌ Erro ao listar tokens:', error.message, '\n');
+    testsFailed++;
   }
-});
 
-// ➕ Adicionar novo token
-app.post('/api/tokens', (req, res) => {
+  // Teste 3: Validar token padrão
+  console.log('📝 Teste 3: Validar token padrão (VIP-DEMO-2024)');
   try {
-    const { token, userId, name, expiresInDays = 365 } = req.body;
-
-    console.log('➕ Adicionando novo token:', { token, userId, name });
-
-    if (!token || !userId || !name) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token, userId e name são obrigatórios' 
-      });
-    }
-
-    // Verifica se o token já existe
-    const existingToken = tokens.find(t => t.token === token);
-    if (existingToken) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token já existe' 
-      });
-    }
-
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + expiresInDays * 24 * 60 * 60 * 1000);
-
-    const newToken = {
-      token,
-      userId,
-      name,
-      active: true,
-      createdAt: now.toISOString(),
-      expiresAt: expiresAt.toISOString()
-    };
-
-    tokens.push(newToken);
-
-    console.log('✅ Token adicionado com sucesso');
-    res.json({ 
-      success: true, 
-      token: newToken,
-      message: 'Token criado com sucesso'
-    });
-
-  } catch (error) {
-    console.error('❌ Erro ao adicionar token:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro ao adicionar token' 
-    });
-  }
-});
-
-// 🔄 Ativar/Desativar token
-app.post('/api/tokens/:token/toggle', (req, res) => {
-  try {
-    const { token } = req.params;
+    const response = await fetch(`${BASE_URL}/api/validate-token?token=VIP-DEMO-2024`);
+    const data = await response.json();
     
-    console.log('🔄 Alternando status do token:', token);
-
-    const tokenData = tokens.find(t => t.token === token);
-
-    if (!tokenData) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Token não encontrado' 
-      });
+    if (data.valid && data.active) {
+      console.log('✅ Token VIP-DEMO-2024 é válido e ativo');
+      console.log(`   Usuário: ${data.name || data.userId}`);
+      console.log(`   Expira: ${new Date(data.expiresAt).toLocaleDateString('pt-BR')}\n`);
+      testsPassed++;
+    } else {
+      throw new Error(`Token inválido: ${data.error || 'motivo desconhecido'}`);
     }
-
-    tokenData.active = !tokenData.active;
-
-    console.log(`✅ Token ${tokenData.active ? 'ativado' : 'desativado'}`);
-    res.json({ 
-      success: true, 
-      token: tokenData,
-      message: `Token ${tokenData.active ? 'ativado' : 'desativado'}`
-    });
-
   } catch (error) {
-    console.error('❌ Erro ao alternar token:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro ao alternar status' 
-    });
+    console.log('❌ Erro ao validar token:', error.message, '\n');
+    testsFailed++;
   }
-});
 
-// ❌ Remover token
-app.delete('/api/tokens/:token', (req, res) => {
+  // Teste 4: Validar token inexistente
+  console.log('📝 Teste 4: Validar token inexistente');
   try {
-    const { token } = req.params;
+    const response = await fetch(`${BASE_URL}/api/validate-token?token=TOKEN-INVALIDO-123`);
+    const data = await response.json();
     
-    console.log('❌ Removendo token:', token);
-
-    const index = tokens.findIndex(t => t.token === token);
-
-    if (index === -1) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Token não encontrado' 
-      });
+    if (!data.valid || !data.active) {
+      console.log('✅ Sistema rejeitou token inválido corretamente\n');
+      testsPassed++;
+    } else {
+      throw new Error('Sistema aceitou token inválido');
     }
-
-    tokens.splice(index, 1);
-
-    console.log('✅ Token removido com sucesso');
-    res.json({ 
-      success: true, 
-      message: 'Token removido com sucesso' 
-    });
-
   } catch (error) {
-    console.error('❌ Erro ao remover token:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro ao remover token' 
-    });
+    console.log('❌ Erro ao testar token inválido:', error.message, '\n');
+    testsFailed++;
   }
-});
 
-// ==================== ROTAS DE CONFIGURAÇÃO ====================
-
-// 📋 Obter configurações de IDs
-app.get('/api/get-ids', (req, res) => {
+  // Teste 5: Criar novo token
+  console.log('📝 Teste 5: Criar novo token de teste');
+  const testToken = `TEST-${Date.now()}`;
   try {
-    const { token } = req.query;
-
-    console.log('📋 Buscando configurações para token:', token);
-
-    if (!token) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token não fornecido' 
-      });
-    }
-
-    // Valida o token
-    const tokenData = tokens.find(t => t.token === token && t.active);
-
-    if (!tokenData) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Token inválido ou inativo' 
-      });
-    }
-
-    res.json({ 
-      success: true, 
-      replacements: replacementConfigs.filter(c => c.active)
+    const response = await fetch(`${BASE_URL}/api/tokens`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: testToken,
+        userId: 'test-user',
+        name: 'Teste Automático',
+        expiresInDays: 1
+      })
     });
-
-  } catch (error) {
-    console.error('❌ Erro ao obter configurações:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Erro ao obter configurações' 
-    });
-  }
-});
-
-// ==================== PAINEL DE ADMINISTRAÇÃO ====================
-
-// Página HTML do painel
-app.get('/', (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Painel de Tokens VIP</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { 
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      padding: 20px;
-    }
-    .container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-    h1 {
-      color: white;
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 2.5em;
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-    }
-    .card {
-      background: white;
-      border-radius: 15px;
-      padding: 25px;
-      margin-bottom: 25px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    }
-    .form-group {
-      margin-bottom: 15px;
-    }
-    label {
-      display: block;
-      margin-bottom: 5px;
-      font-weight: bold;
-      color: #333;
-    }
-    input {
-      width: 100%;
-      padding: 12px;
-      border: 2px solid #ddd;
-      border-radius: 8px;
-      font-size: 14px;
-      transition: border-color 0.3s;
-    }
-    input:focus {
-      outline: none;
-      border-color: #667eea;
-    }
-    button {
-      padding: 12px 25px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: bold;
-      cursor: pointer;
-      transition: all 0.3s;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-    .btn-primary:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-    }
-    .btn-danger {
-      background: #e74c3c;
-      color: white;
-    }
-    .btn-danger:hover {
-      background: #c0392b;
-    }
-    .btn-success {
-      background: #10b981;
-      color: white;
-    }
-    .btn-warning {
-      background: #f59e0b;
-      color: white;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    th {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 12px;
-      text-align: left;
-    }
-    td {
-      padding: 12px;
-      border-bottom: 1px solid #eee;
-    }
-    tr:hover {
-      background: #f8f9fa;
-    }
-    .status {
-      padding: 5px 10px;
-      border-radius: 5px;
-      font-size: 12px;
-      font-weight: bold;
-    }
-    .status-active {
-      background: #d1fae5;
-      color: #065f46;
-    }
-    .status-inactive {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-    .stat-card {
-      background: white;
-      padding: 20px;
-      border-radius: 10px;
-      text-align: center;
-      box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    }
-    .stat-number {
-      font-size: 2.5em;
-      font-weight: bold;
-      color: #667eea;
-    }
-    .stat-label {
-      color: #666;
-      margin-top: 5px;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1>🔐 Painel de Tokens VIP</h1>
     
-    <div class="stats" id="stats"></div>
-
-    <div class="card">
-      <h2>➕ Adicionar Novo Token</h2>
-      <div class="form-group">
-        <label>Token:</label>
-        <input type="text" id="newToken" placeholder="Ex: VIP-2024-ABC123">
-      </div>
-      <div class="form-group">
-        <label>User ID:</label>
-        <input type="text" id="newUserId" placeholder="Ex: user001">
-      </div>
-      <div class="form-group">
-        <label>Nome:</label>
-        <input type="text" id="newName" placeholder="Ex: João Silva">
-      </div>
-      <div class="form-group">
-        <label>Validade (dias):</label>
-        <input type="number" id="expiresInDays" value="365">
-      </div>
-      <button class="btn-primary" onclick="addToken()">Criar Token</button>
-    </div>
-
-    <div class="card">
-      <h2>📋 Tokens Cadastrados</h2>
-      <button class="btn-primary" onclick="loadTokens()">🔄 Atualizar Lista</button>
-      <table id="tokensTable">
-        <thead>
-          <tr>
-            <th>Token</th>
-            <th>User ID</th>
-            <th>Nome</th>
-            <th>Status</th>
-            <th>Criado</th>
-            <th>Expira</th>
-            <th>Ações</th>
-          </tr>
-        </thead>
-        <tbody id="tokensBody"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <script>
-    async function loadTokens() {
-      try {
-        const response = await fetch('/api/tokens');
-        const data = await response.json();
-
-        if (data.success) {
-          const tbody = document.getElementById('tokensBody');
-          tbody.innerHTML = '';
-
-          let activeCount = 0;
-          let inactiveCount = 0;
-
-          data.tokens.forEach(token => {
-            if (token.active) activeCount++;
-            else inactiveCount++;
-
-            const tr = document.createElement('tr');
-            tr.innerHTML = \`
-              <td><strong>\${token.token}</strong></td>
-              <td>\${token.userId}</td>
-              <td>\${token.name}</td>
-              <td>
-                <span class="status status-\${token.active ? 'active' : 'inactive'}">
-                  \${token.active ? '✅ Ativo' : '❌ Inativo'}
-                </span>
-              </td>
-              <td>\${new Date(token.createdAt).toLocaleDateString('pt-BR')}</td>
-              <td>\${new Date(token.expiresAt).toLocaleDateString('pt-BR')}</td>
-              <td>
-                <button class="btn-warning" onclick="toggleToken('\${token.token}')">
-                  \${token.active ? '⏸️ Desativar' : '▶️ Ativar'}
-                </button>
-                <button class="btn-danger" onclick="deleteToken('\${token.token}')">🗑️ Remover</button>
-              </td>
-            \`;
-            tbody.appendChild(tr);
-          });
-
-          // Atualiza estatísticas
-          document.getElementById('stats').innerHTML = \`
-            <div class="stat-card">
-              <div class="stat-number">\${data.count}</div>
-              <div class="stat-label">Total de Tokens</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-number" style="color: #10b981">\${activeCount}</div>
-              <div class="stat-label">Tokens Ativos</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-number" style="color: #e74c3c">\${inactiveCount}</div>
-              <div class="stat-label">Tokens Inativos</div>
-            </div>
-          \`;
-        }
-      } catch (error) {
-        alert('Erro ao carregar tokens: ' + error.message);
-      }
+    const data = await response.json();
+    
+    if (data.success) {
+      console.log(`✅ Token criado com sucesso: ${testToken}\n`);
+      testsPassed++;
+    } else {
+      throw new Error(data.error || 'Falha ao criar token');
     }
+  } catch (error) {
+    console.log('❌ Erro ao criar token:', error.message, '\n');
+    testsFailed++;
+  }
 
-    async function addToken() {
-      const token = document.getElementById('newToken').value.trim();
-      const userId = document.getElementById('newUserId').value.trim();
-      const name = document.getElementById('newName').value.trim();
-      const expiresInDays = parseInt(document.getElementById('expiresInDays').value);
-
-      if (!token || !userId || !name) {
-        alert('Preencha todos os campos!');
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/tokens', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token, userId, name, expiresInDays })
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          alert('✅ Token criado com sucesso!');
-          document.getElementById('newToken').value = '';
-          document.getElementById('newUserId').value = '';
-          document.getElementById('newName').value = '';
-          loadTokens();
-        } else {
-          alert('❌ Erro: ' + data.error);
-        }
-      } catch (error) {
-        alert('Erro ao criar token: ' + error.message);
-      }
+  // Teste 6: Validar token recém-criado
+  console.log('📝 Teste 6: Validar token recém-criado');
+  try {
+    const response = await fetch(`${BASE_URL}/api/validate-token?token=${testToken}`);
+    const data = await response.json();
+    
+    if (data.valid && data.active) {
+      console.log('✅ Token recém-criado é válido e ativo\n');
+      testsPassed++;
+    } else {
+      throw new Error('Token não está válido após criação');
     }
+  } catch (error) {
+    console.log('❌ Erro ao validar token criado:', error.message, '\n');
+    testsFailed++;
+  }
 
-    async function toggleToken(token) {
-      try {
-        const response = await fetch(\`/api/tokens/\${token}/toggle\`, {
-          method: 'POST'
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          alert(data.message);
-          loadTokens();
-        } else {
-          alert('❌ Erro: ' + data.error);
-        }
-      } catch (error) {
-        alert('Erro ao alternar token: ' + error.message);
-      }
+  // Teste 7: Desativar token
+  console.log('📝 Teste 7: Desativar token');
+  try {
+    const response = await fetch(`${BASE_URL}/api/tokens/${testToken}/toggle`, {
+      method: 'POST'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      console.log('✅ Token desativado com sucesso\n');
+      testsPassed++;
+    } else {
+      throw new Error(data.error || 'Falha ao desativar token');
     }
+  } catch (error) {
+    console.log('❌ Erro ao desativar token:', error.message, '\n');
+    testsFailed++;
+  }
 
-    async function deleteToken(token) {
-      if (!confirm(\`Tem certeza que deseja remover o token \${token}?\`)) {
-        return;
-      }
-
-      try {
-        const response = await fetch(\`/api/tokens/\${token}\`, {
-          method: 'DELETE'
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          alert('✅ Token removido com sucesso!');
-          loadTokens();
-        } else {
-          alert('❌ Erro: ' + data.error);
-        }
-      } catch (error) {
-        alert('Erro ao remover token: ' + error.message);
-      }
+  // Teste 8: Validar token desativado
+  console.log('📝 Teste 8: Verificar se token desativado é rejeitado');
+  try {
+    const response = await fetch(`${BASE_URL}/api/validate-token?token=${testToken}`);
+    const data = await response.json();
+    
+    if (!data.active) {
+      console.log('✅ Token desativado foi corretamente rejeitado\n');
+      testsPassed++;
+    } else {
+      throw new Error('Token desativado ainda está ativo');
     }
+  } catch (error) {
+    console.log('❌ Erro ao verificar token desativado:', error.message, '\n');
+    testsFailed++;
+  }
 
-    // Carrega tokens ao iniciar
-    loadTokens();
-  </script>
-</body>
-</html>
-  `);
-});
+  // Teste 9: Remover token
+  console.log('📝 Teste 9: Remover token de teste');
+  try {
+    const response = await fetch(`${BASE_URL}/api/tokens/${testToken}`, {
+      method: 'DELETE'
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      console.log('✅ Token removido com sucesso\n');
+      testsPassed++;
+    } else {
+      throw new Error(data.error || 'Falha ao remover token');
+    }
+  } catch (error) {
+    console.log('❌ Erro ao remover token:', error.message, '\n');
+    testsFailed++;
+  }
 
-// ==================== INICIAR SERVIDOR ====================
-const PORT = process.env.PORT || 3000;
+  // Teste 10: Obter configurações
+  console.log('📝 Teste 10: Obter configurações de IDs');
+  try {
+    const response = await fetch(`${BASE_URL}/api/get-ids?token=VIP-DEMO-2024`);
+    const data = await response.json();
+    
+    if (data.success && Array.isArray(data.replacements)) {
+      console.log('✅ Configurações obtidas com sucesso');
+      console.log(`   ${data.replacements.length} configuração(ões) ativa(s)\n`);
+      testsPassed++;
+    } else {
+      throw new Error('Formato de resposta inválido');
+    }
+  } catch (error) {
+    console.log('❌ Erro ao obter configurações:', error.message, '\n');
+    testsFailed++;
+  }
 
-app.listen(PORT, () => {
-  console.log(`
-╔═══════════════════════════════════════╗
-║   🚀 SERVIDOR INICIADO COM SUCESSO   ║
-╠═══════════════════════════════════════╣
-║  📡 Porta: ${PORT}                     
-║  🌐 URL: http://localhost:${PORT}     
-║  🔐 Painel: http://localhost:${PORT}  
-╚═══════════════════════════════════════╝
+  // Resumo
+  console.log('═══════════════════════════════════════');
+  console.log('📊 RESUMO DOS TESTES');
+  console.log('═══════════════════════════════════════');
+  console.log(`✅ Testes aprovados: ${testsPassed}`);
+  console.log(`❌ Testes falharam: ${testsFailed}`);
+  console.log(`📈 Taxa de sucesso: ${((testsPassed / (testsPassed + testsFailed)) * 100).toFixed(1)}%`);
+  console.log('═══════════════════════════════════════\n');
 
-📋 Endpoints disponíveis:
-  GET  /                        - Painel de administração
-  GET  /api/tokens              - Listar tokens
-  GET  /api/validate-token      - Validar token
-  POST /api/tokens              - Adicionar token
-  POST /api/tokens/:token/toggle - Ativar/Desativar
-  DELETE /api/tokens/:token     - Remover token
-  GET  /api/get-ids             - Obter configurações
+  if (testsFailed === 0) {
+    console.log('🎉 PARABÉNS! Todos os testes passaram!');
+    console.log('✅ Seu servidor está funcionando perfeitamente.\n');
+    console.log('🔗 Acesse o painel: http://localhost:3000');
+    console.log('🔑 Token de teste: VIP-DEMO-2024\n');
+  } else {
+    console.log('⚠️ Alguns testes falharam. Verifique os erros acima.');
+    console.log('💡 Dica: Certifique-se de que o servidor está rodando.\n');
+  }
+}
 
-🎯 Token de teste: VIP-DEMO-2024
-  `);
+// Executar testes
+runTests().catch(error => {
+  console.error('❌ Erro fatal durante os testes:', error);
+  process.exit(1);
 });
