@@ -49,7 +49,7 @@ let activeSites = {
         'manga-presente-pg.com/game/wrap',
         'manga-presente-pg.com/api/game/jump'
       ],
-      active: false, // Inativa até você ativar
+      active: true, // Inativa até você ativar
       addedAt: '2024-12-23'
     }
   ],
@@ -518,3 +518,4 @@ app.listen(PORT, () => {
   console.log('🏠 Sites ativos:', activeSites.sites.filter(s => s.active).length);
   console.log('========================================');
 });
+
