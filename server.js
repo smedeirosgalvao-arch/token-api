@@ -11,6 +11,9 @@ let tokens = {
   'VIP-2024-DEF456UVW': { user: 'Maria Santos', active: true, createdAt: '2024-12-21' }
 };
 
+// SENHA ADMIN (MUDE DEPOIS!)
+const ADMIN_PASSWORD = 'admin123';
+
 // API: Validar token (usado pela extensão)
 app.get('/api/validate-token', (req, res) => {
   const { token } = req.query;
@@ -40,7 +43,7 @@ app.get('/api/validate-token', (req, res) => {
 app.post('/api/generate-token', (req, res) => {
   const { user, password } = req.body;
   
-  if (password !== 'admin123') {
+  if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Senha incorreta' });
   }
 
@@ -59,7 +62,7 @@ app.post('/api/generate-token', (req, res) => {
 app.post('/api/toggle-token', (req, res) => {
   const { token, password } = req.body;
   
-  if (password !== 'admin123') {
+  if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Senha incorreta' });
   }
 
@@ -75,7 +78,7 @@ app.post('/api/toggle-token', (req, res) => {
 app.post('/api/delete-token', (req, res) => {
   const { token, password } = req.body;
   
-  if (password !== 'admin123') {
+  if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Senha incorreta' });
   }
 
@@ -91,7 +94,7 @@ app.post('/api/delete-token', (req, res) => {
 app.get('/api/list-tokens', (req, res) => {
   const { password } = req.query;
   
-  if (password !== 'admin123') {
+  if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Senha incorreta' });
   }
 
@@ -103,10 +106,19 @@ app.get('/api/list-tokens', (req, res) => {
   res.json({ tokens: tokenList });
 });
 
+// Rota de teste
+app.get('/test', (req, res) => {
+  res.json({ 
+    status: 'online',
+    message: 'API funcionando!',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Página inicial (Dashboard)
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
-<html lang="pt-BR">
+<html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -114,36 +126,28 @@ app.get('/', (req, res) => {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: system-ui, -apple-system, sans-serif;
+      font-family: Arial, sans-serif;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       min-height: 100vh;
       padding: 20px;
     }
-    .container { max-width: 1200px; margin: 0 auto; }
-    .header {
-      background: rgba(255,255,255,0.15);
-      backdrop-filter: blur(10px);
-      border-radius: 20px;
-      padding: 30px;
-      margin-bottom: 30px;
-      text-align: center;
-      color: white;
-    }
-    .login-box {
+    .container { max-width: 1000px; margin: 0 auto; }
+    .card {
       background: white;
-      border-radius: 20px;
-      padding: 40px;
-      max-width: 400px;
-      margin: 50px auto;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      border-radius: 15px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     }
+    h1 { color: #667eea; margin-bottom: 10px; }
+    h2 { color: #333; margin-bottom: 20px; }
     input, button {
       width: 100%;
-      padding: 15px;
+      padding: 12px;
       border: 1px solid #ddd;
-      border-radius: 10px;
+      border-radius: 8px;
       font-size: 16px;
-      margin-bottom: 15px;
+      margin-bottom: 10px;
     }
     button {
       background: #667eea;
@@ -153,69 +157,68 @@ app.get('/', (req, res) => {
       font-weight: bold;
     }
     button:hover { background: #5568d3; }
-    .controls {
-      background: rgba(255,255,255,0.15);
-      backdrop-filter: blur(10px);
-      border-radius: 20px;
-      padding: 30px;
-      margin-bottom: 30px;
-      color: white;
-    }
-    .token-card {
-      background: rgba(255,255,255,0.15);
-      backdrop-filter: blur(10px);
-      border-radius: 15px;
-      padding: 25px;
-      margin-bottom: 15px;
-      color: white;
+    .token-item {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 10px;
     }
     .token-code {
-      background: rgba(0,0,0,0.3);
-      padding: 15px;
-      border-radius: 10px;
-      margin: 15px 0;
-      font-family: monospace;
+      background: #333;
       color: #fbbf24;
-      cursor: pointer;
-      word-break: break-all;
-    }
-    .status-active { color: #10b981; font-weight: bold; }
-    .status-inactive { color: #ef4444; font-weight: bold; }
-    .hidden { display: none; }
-    .btn-group { display: flex; gap: 10px; margin-top: 15px; }
-    .btn-toggle, .btn-delete {
-      flex: 1;
       padding: 10px;
-      border: none;
-      border-radius: 8px;
+      border-radius: 5px;
+      font-family: monospace;
+      margin: 10px 0;
+      word-break: break-all;
       cursor: pointer;
+    }
+    .active { color: #10b981; font-weight: bold; }
+    .inactive { color: #ef4444; font-weight: bold; }
+    .hidden { display: none; }
+    .btn-small {
+      display: inline-block;
+      width: auto;
+      padding: 8px 15px;
+      margin: 5px 5px 5px 0;
+      font-size: 14px;
+    }
+    .btn-danger { background: #ef4444; }
+    .btn-warning { background: #f59e0b; }
+    .btn-success { background: #10b981; }
+    .alert {
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 15px;
       font-weight: bold;
     }
-    .btn-toggle { background: #f59e0b; color: white; }
-    .btn-delete { background: #ef4444; color: white; }
+    .alert-error { background: #fee; color: #c00; }
+    .alert-success { background: #efe; color: #0a0; }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
+    <div class="card">
       <h1>🔐 Painel Token VIP</h1>
       <p>Gerencie o acesso à extensão</p>
     </div>
 
-    <div id="loginBox" class="login-box">
+    <div id="loginBox" class="card">
       <h2>🔑 Login Admin</h2>
-      <input type="password" id="adminPassword" placeholder="Senha de administrador">
+      <div id="loginError" class="alert alert-error hidden">Senha incorreta!</div>
+      <input type="password" id="adminPassword" placeholder="Digite a senha (admin123)" onkeypress="if(event.key==='Enter')login()">
       <button onclick="login()">Entrar</button>
+      <p style="margin-top:10px; color:#666; font-size:14px;">Senha padrão: admin123</p>
     </div>
 
     <div id="dashboard" class="hidden">
-      <div class="controls">
+      <div class="card">
         <h2>➕ Gerar Novo Token</h2>
         <input type="text" id="newUserName" placeholder="Nome do usuário">
         <button onclick="generateToken()">Gerar Token VIP</button>
       </div>
 
-      <div class="controls">
+      <div class="card">
         <h2>📋 Tokens Cadastrados</h2>
         <div id="tokensList"></div>
       </div>
@@ -225,18 +228,28 @@ app.get('/', (req, res) => {
   <script>
     let adminPassword = '';
 
-    function login() {
-      adminPassword = document.getElementById('adminPassword').value;
-      loadTokens();
-    }
+    async function login() {
+      const passwordInput = document.getElementById('adminPassword');
+      adminPassword = passwordInput.value;
+      const errorDiv = document.getElementById('loginError');
+      
+      if (!adminPassword) {
+        errorDiv.textContent = 'Digite a senha!';
+        errorDiv.classList.remove('hidden');
+        return;
+      }
 
-    async function loadTokens() {
+      console.log('Tentando login com senha:', adminPassword);
+
       try {
-        const response = await fetch('/api/list-tokens?password=' + adminPassword);
+        const response = await fetch('/api/list-tokens?password=' + encodeURIComponent(adminPassword));
         const data = await response.json();
         
+        console.log('Resposta do servidor:', data);
+        
         if (data.error) {
-          alert('Senha incorreta!');
+          errorDiv.textContent = 'Senha incorreta!';
+          errorDiv.classList.remove('hidden');
           return;
         }
 
@@ -244,72 +257,136 @@ app.get('/', (req, res) => {
         document.getElementById('dashboard').classList.remove('hidden');
         displayTokens(data.tokens);
       } catch (error) {
-        alert('Erro ao carregar tokens');
+        console.error('Erro:', error);
+        errorDiv.textContent = 'Erro ao conectar com servidor!';
+        errorDiv.classList.remove('hidden');
       }
     }
 
-    function displayTokens(tokens) {
+    function displayTokens(tokensList) {
       const container = document.getElementById('tokensList');
+      
+      if (!tokensList || tokensList.length === 0) {
+        container.innerHTML = '<p>Nenhum token cadastrado ainda.</p>';
+        return;
+      }
+
       container.innerHTML = '';
 
-      tokens.forEach(token => {
-        const card = document.createElement('div');
-        card.className = 'token-card';
-        card.innerHTML = '<div><strong>' + token.user + '</strong> - <span class="' + 
-          (token.active ? 'status-active' : 'status-inactive') + '">' +
-          (token.active ? '✅ ATIVO' : '❌ INATIVO') + '</span></div>' +
-          '<div class="token-code" onclick="copyToken(\'' + token.token + '\')">' + token.token + '</div>' +
-          '<div>📅 Criado: ' + token.createdAt + '</div>' +
-          '<div class="btn-group">' +
-          '<button class="btn-toggle" onclick="toggleToken(\'' + token.token + '\')">' +
-          (token.active ? '⏸️ Desativar' : '▶️ Ativar') + '</button>' +
-          '<button class="btn-delete" onclick="deleteToken(\'' + token.token + '\')">🗑️ Deletar</button>' +
+      tokensList.forEach(token => {
+        const div = document.createElement('div');
+        div.className = 'token-item';
+        
+        const statusClass = token.active ? 'active' : 'inactive';
+        const statusText = token.active ? '✅ ATIVO' : '❌ INATIVO';
+        const toggleText = token.active ? '⏸️ Desativar' : '▶️ Ativar';
+        
+        div.innerHTML = 
+          '<div><strong>' + token.user + '</strong> - <span class="' + statusClass + '">' + statusText + '</span></div>' +
+          '<div class="token-code" onclick="copyToken(\'' + token.token + '\')" title="Clique para copiar">' + token.token + '</div>' +
+          '<div style="color:#666; font-size:14px;">Criado em: ' + token.createdAt + '</div>' +
+          '<div style="margin-top:10px;">' +
+          '<button class="btn-small btn-warning" onclick="toggleToken(\'' + token.token + '\')">' + toggleText + '</button>' +
+          '<button class="btn-small btn-danger" onclick="deleteToken(\'' + token.token + '\')">🗑️ Deletar</button>' +
           '</div>';
-        container.appendChild(card);
+        
+        container.appendChild(div);
       });
     }
 
     async function generateToken() {
-      const user = document.getElementById('newUserName').value;
-      if (!user) { alert('Digite o nome do usuário!'); return; }
+      const userInput = document.getElementById('newUserName');
+      const user = userInput.value.trim();
+      
+      if (!user) {
+        alert('Digite o nome do usuário!');
+        return;
+      }
 
-      const response = await fetch('/api/generate-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user, password: adminPassword })
-      });
+      try {
+        const response = await fetch('/api/generate-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user: user, password: adminPassword })
+        });
 
-      const data = await response.json();
-      if (data.success) {
-        alert('Token gerado: ' + data.token);
-        document.getElementById('newUserName').value = '';
-        loadTokens();
+        const data = await response.json();
+        
+        if (data.success) {
+          alert('✅ Token gerado com sucesso!\\n\\nToken: ' + data.token + '\\n\\nCopie e envie para o usuário.');
+          userInput.value = '';
+          loadTokens();
+        } else {
+          alert('Erro ao gerar token: ' + (data.error || 'Desconhecido'));
+        }
+      } catch (error) {
+        alert('Erro ao gerar token!');
+        console.error(error);
       }
     }
 
     async function toggleToken(token) {
-      const response = await fetch('/api/toggle-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password: adminPassword })
-      });
-      if ((await response.json()).success) loadTokens();
+      try {
+        const response = await fetch('/api/toggle-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, password: adminPassword })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          loadTokens();
+        }
+      } catch (error) {
+        alert('Erro ao alterar token!');
+      }
     }
 
     async function deleteToken(token) {
-      if (!confirm('Deletar este token?')) return;
-      const response = await fetch('/api/delete-token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password: adminPassword })
-      });
-      if ((await response.json()).success) { alert('Token deletado!'); loadTokens(); }
+      if (!confirm('Tem certeza que deseja deletar este token?')) {
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/delete-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: token, password: adminPassword })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          alert('✅ Token deletado com sucesso!');
+          loadTokens();
+        }
+      } catch (error) {
+        alert('Erro ao deletar token!');
+      }
+    }
+
+    async function loadTokens() {
+      try {
+        const response = await fetch('/api/list-tokens?password=' + encodeURIComponent(adminPassword));
+        const data = await response.json();
+        
+        if (!data.error) {
+          displayTokens(data.tokens);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar tokens:', error);
+      }
     }
 
     function copyToken(token) {
-      navigator.clipboard.writeText(token);
-      alert('Token copiado: ' + token);
+      navigator.clipboard.writeText(token).then(function() {
+        alert('✅ Token copiado: ' + token);
+      }, function() {
+        prompt('Copie o token:', token);
+      });
     }
+
+    // Adiciona console log para debug
+    console.log('Painel carregado. Senha padrão: admin123');
   </script>
 </body>
 </html>`);
@@ -318,5 +395,9 @@ app.get('/', (req, res) => {
 // Iniciar servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log('Servidor rodando na porta ' + PORT);
+  console.log('=================================');
+  console.log('Servidor Token VIP Online!');
+  console.log('Porta:', PORT);
+  console.log('Senha Admin:', ADMIN_PASSWORD);
+  console.log('=================================');
 });
