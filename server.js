@@ -15,20 +15,27 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'chave-super-secreta-mude-isso',
   resave: false,
   saveUninitialized: false,
+  name: 'sessionId',
   cookie: { 
-    secure: NODE_ENV === 'production',
+    secure: false, // Mude para true apenas se usar HTTPS
     httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 horas
+    maxAge: 24 * 60 * 60 * 1000, // 24 horas
+    sameSite: 'lax'
   }
 }));
 
-// Configuração de CORS
-app.use(cors({
-  origin: '*',
+// Configuração de CORS - DEVE VIR ANTES DA SESSÃO
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Permite requisições sem origin (como Postman) e qualquer origin
+    callback(null, true);
+  },
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
-}));
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -56,9 +63,16 @@ const replacementConfigs = [
 
 // ==================== MIDDLEWARE DE AUTENTICAÇÃO ====================
 function requireAuth(req, res, next) {
+  console.log('🔐 Verificando autenticação...');
+  console.log('Session:', req.session);
+  console.log('Authenticated?', req.session?.authenticated);
+  
   if (req.session && req.session.authenticated) {
+    console.log('✅ Usuário autenticado');
     return next();
   }
+  
+  console.log('❌ Usuário não autenticado');
   res.status(401).json({ 
     success: false, 
     error: 'Não autenticado',
@@ -223,20 +237,30 @@ app.get('/login', (req, res) => {
 
 // Rota de Login (POST)
 app.post('/api/login', (req, res) => {
+  console.log('📥 Recebendo tentativa de login...');
+  console.log('Body:', req.body);
+  console.log('Session antes:', req.session);
+  
   const { password } = req.body;
 
   if (!password) {
+    console.log('❌ Senha não fornecida');
     return res.status(400).json({ 
       success: false, 
       error: 'Senha não fornecida' 
     });
   }
 
+  console.log('🔑 Senha recebida:', password);
+  console.log('🔑 Senha esperada:', ADMIN_PASSWORD);
+  console.log('🔑 Senhas são iguais?', password === ADMIN_PASSWORD);
+
   if (password === ADMIN_PASSWORD) {
     req.session.authenticated = true;
     req.session.loginTime = new Date().toISOString();
     
-    console.log('✅ Login bem-sucedido:', new Date().toLocaleString('pt-BR'));
+    console.log('✅ Login bem-sucedido!');
+    console.log('Session depois:', req.session);
     
     return res.json({ 
       success: true, 
@@ -244,7 +268,7 @@ app.post('/api/login', (req, res) => {
     });
   }
 
-  console.log('❌ Tentativa de login falhou:', new Date().toLocaleString('pt-BR'));
+  console.log('❌ Senha incorreta');
   
   res.status(401).json({ 
     success: false, 
