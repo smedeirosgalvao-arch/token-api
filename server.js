@@ -41,10 +41,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-// ================= LOGIN =================
+// ================= LOGIN (FAKE) =================
 app.post('/api/login', (req, res) => {
   if (req.body.password !== ADMIN_PASSWORD) {
-    return res.status(401).json({ success: false });
+    return res.status(401).json({ success: false, error: 'Senha inválida' });
   }
   res.json({ success: true });
 });
@@ -56,21 +56,36 @@ app.get('/api/tokens', requireAdminPassword, (req, res) => {
 
 app.post('/api/tokens', requireAdminPassword, (req, res) => {
   const { token, userId, name, expiresInDays = 365 } = req.body;
+
   if (!token || !userId || !name) {
-    return res.status(400).json({ success: false });
+    return res.status(400).json({
+      success: false,
+      error: 'Campos obrigatórios'
+    });
   }
+
+  if (tokens.find(t => t.token === token)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Token já existe'
+    });
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + expiresInDays * 86400000);
 
   const newToken = {
     token,
     userId,
     name,
     active: true,
-    createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + expiresInDays * 86400000).toISOString()
+    createdAt: now.toISOString(),
+    expiresAt: expiresAt.toISOString()
   };
 
   tokens.push(newToken);
-  res.json({ success: true });
+
+  res.json({ success: true, token: newToken });
 });
 
 app.post('/api/tokens/:token/toggle', requireAdminPassword, (req, res) => {
@@ -81,7 +96,9 @@ app.post('/api/tokens/:token/toggle', requireAdminPassword, (req, res) => {
 });
 
 app.delete('/api/tokens/:token', requireAdminPassword, (req, res) => {
-  tokens = tokens.filter(t => t.token !== req.params.token);
+  const index = tokens.findIndex(t => t.token === req.params.token);
+  if (index === -1) return res.status(404).json({ success: false });
+  tokens.splice(index, 1);
   res.json({ success: true });
 });
 
@@ -94,12 +111,14 @@ app.get('/panel', (req, res) => {
 <meta charset="UTF-8">
 <title>Painel Tokens</title>
 <style>
-body { font-family: Arial; background:#111; color:#fff; padding:20px }
-.card { background:#1f1f1f; padding:20px; border-radius:8px; margin-bottom:20px }
+body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
+.card { background:#111827; padding:20px; border-radius:8px; margin-bottom:20px }
 input, button { padding:10px; margin:5px 0; width:100% }
 button { background:#4f46e5; color:white; border:none; cursor:pointer }
+button:hover { opacity:0.9 }
 table { width:100%; margin-top:10px }
-td, th { padding:8px; border-bottom:1px solid #333 }
+td, th { padding:8px; border-bottom:1px solid #334155 }
+th { text-align:left }
 </style>
 </head>
 <body>
@@ -108,77 +127,112 @@ td, th { padding:8px; border-bottom:1px solid #333 }
 
 <div class="card">
   <h3>Criar Token</h3>
-  <input id="token" placeholder="Token">
-  <input id="userId" placeholder="User ID">
-  <input id="name" placeholder="Nome">
-  <button onclick="create()">Criar</button>
+  <input id="tokenInput" placeholder="Token">
+  <input id="userIdInput" placeholder="User ID">
+  <input id="nameInput" placeholder="Nome">
+  <button onclick="createToken()">Criar Token</button>
 </div>
 
 <div class="card">
-  <h3>Tokens</h3>
-  <table id="table"></table>
+  <h3>Tokens Cadastrados</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Token</th>
+        <th>Nome</th>
+        <th>Status</th>
+        <th>Ações</th>
+      </tr>
+    </thead>
+    <tbody id="tokensTable"></tbody>
+  </table>
 </div>
 
 <script>
-const password = prompt('Senha do painel');
+const ADMIN_PASSWORD = prompt('Digite a senha do painel');
 
 function headers() {
   return {
-    'Content-Type':'application/json',
-    'x-admin-password': password
+    'Content-Type': 'application/json',
+    'x-admin-password': ADMIN_PASSWORD
+  };
+}
+
+async function loadTokens() {
+  const res = await fetch('/api/tokens', { headers: headers() });
+  const data = await res.json();
+
+  if (!data.success) {
+    alert('Senha incorreta');
+    return;
   }
-}
 
-async function load() {
-  const r = await fetch('/api/tokens', { headers: headers() });
-  const d = await r.json();
-  const t = document.getElementById('table');
-  t.innerHTML = '<tr><th>Token</th><th>Nome</th><th>Status</th><th>Ações</th></tr>';
-  d.tokens.forEach(x => {
-    t.innerHTML += \`
-      <tr>
-        <td>\${x.token}</td>
-        <td>\${x.name}</td>
-        <td>\${x.active ? 'Ativo' : 'Inativo'}</td>
-        <td>
-          <button onclick="toggle('\${x.token}')">Toggle</button>
-          <button onclick="remove('\${x.token}')">Excluir</button>
-        </td>
-      </tr>
-    \`
+  const tbody = document.getElementById('tokensTable');
+  tbody.innerHTML = '';
+
+  data.tokens.forEach(t => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = \`
+      <td>\${t.token}</td>
+      <td>\${t.name}</td>
+      <td>\${t.active ? 'Ativo' : 'Inativo'}</td>
+      <td>
+        <button onclick="toggleToken('\${t.token}')">Ativar/Desativar</button>
+        <button onclick="deleteToken('\${t.token}')">Excluir</button>
+      </td>
+    \`;
+    tbody.appendChild(tr);
   });
 }
 
-async function create() {
-  await fetch('/api/tokens', {
-    method:'POST',
+async function createToken() {
+  const token = document.getElementById('tokenInput').value.trim();
+  const userId = document.getElementById('userIdInput').value.trim();
+  const name = document.getElementById('nameInput').value.trim();
+
+  if (!token || !userId || !name) {
+    alert('Preencha todos os campos');
+    return;
+  }
+
+  const res = await fetch('/api/tokens', {
+    method: 'POST',
     headers: headers(),
-    body: JSON.stringify({
-      token: token.value,
-      userId: userId.value,
-      name: name.value
-    })
+    body: JSON.stringify({ token, userId, name })
   });
-  load();
+
+  const data = await res.json();
+
+  if (!data.success) {
+    alert(data.error || 'Erro ao criar token');
+    return;
+  }
+
+  document.getElementById('tokenInput').value = '';
+  document.getElementById('userIdInput').value = '';
+  document.getElementById('nameInput').value = '';
+
+  loadTokens();
 }
 
-async function toggle(t) {
-  await fetch('/api/tokens/'+t+'/toggle', {
-    method:'POST',
+async function toggleToken(token) {
+  await fetch('/api/tokens/' + token + '/toggle', {
+    method: 'POST',
     headers: headers()
   });
-  load();
+  loadTokens();
 }
 
-async function remove(t) {
-  await fetch('/api/tokens/'+t, {
-    method:'DELETE',
+async function deleteToken(token) {
+  if (!confirm('Deseja remover este token?')) return;
+  await fetch('/api/tokens/' + token, {
+    method: 'DELETE',
     headers: headers()
   });
-  load();
+  loadTokens();
 }
 
-load();
+loadTokens();
 </script>
 
 </body>
@@ -193,5 +247,5 @@ app.get('/', (req, res) => {
 
 // ================= START =================
 app.listen(PORT, () => {
-  console.log('Servidor online na porta', PORT);
+  console.log('🚀 Servidor rodando na porta', PORT);
 });
