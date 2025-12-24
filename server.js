@@ -2,13 +2,11 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-// ==================== CONFIG ====================
+// ================= CONFIG =================
 const PORT = process.env.PORT || 3000;
-const NODE_ENV = process.env.NODE_ENV || 'development';
-
-// ==================== AUTH SIMPLES ====================
 const ADMIN_PASSWORD = 'Manuela9';
 
+// ================= AUTH =================
 function requireAdminPassword(req, res, next) {
   const password =
     req.headers['x-admin-password'] ||
@@ -16,26 +14,17 @@ function requireAdminPassword(req, res, next) {
     req.query?.password;
 
   if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({
-      success: false,
-      error: 'Senha administrativa inválida'
-    });
+    return res.status(401).json({ success: false, error: 'Senha inválida' });
   }
   next();
 }
 
-// ==================== MIDDLEWARE ====================
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-admin-password'],
-  credentials: false
-}));
-
+// ================= MIDDLEWARE =================
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ==================== DATABASE (MEMÓRIA) ====================
+// ================= DATABASE (MEMÓRIA) =================
 let tokens = [
   {
     token: 'VIP-DEMO-2024',
@@ -47,188 +36,162 @@ let tokens = [
   }
 ];
 
-const replacementConfigs = [
-  {
-    domain: 'exemplo.com',
-    oldId: '2012025',
-    newId: '1738001',
-    active: true
-  }
-];
-
-// ==================== HEALTH ====================
+// ================= HEALTH =================
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    environment: NODE_ENV,
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-// ==================== LOGIN (FAKE – SENHA FIXA) ====================
+// ================= LOGIN =================
 app.post('/api/login', (req, res) => {
-  const { password } = req.body;
-
-  if (password !== ADMIN_PASSWORD) {
-    return res.status(401).json({
-      success: false,
-      error: 'Senha inválida'
-    });
+  if (req.body.password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ success: false });
   }
-
-  res.json({
-    success: true,
-    message: 'Login realizado com sucesso (senha fixa)',
-    admin: true
-  });
+  res.json({ success: true });
 });
 
-// ==================== TOKENS (ADMIN) ====================
+// ================= TOKENS API =================
 app.get('/api/tokens', requireAdminPassword, (req, res) => {
-  res.json({
-    success: true,
-    count: tokens.length,
-    tokens
-  });
+  res.json({ success: true, tokens });
 });
 
 app.post('/api/tokens', requireAdminPassword, (req, res) => {
   const { token, userId, name, expiresInDays = 365 } = req.body;
-
   if (!token || !userId || !name) {
-    return res.status(400).json({
-      success: false,
-      error: 'Token, userId e name são obrigatórios'
-    });
+    return res.status(400).json({ success: false });
   }
-
-  if (tokens.find(t => t.token === token)) {
-    return res.status(400).json({
-      success: false,
-      error: 'Token já existe'
-    });
-  }
-
-  const now = new Date();
-  const expiresAt = new Date(now.getTime() + expiresInDays * 86400000);
 
   const newToken = {
     token,
     userId,
     name,
     active: true,
-    createdAt: now.toISOString(),
-    expiresAt: expiresAt.toISOString()
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + expiresInDays * 86400000).toISOString()
   };
 
   tokens.push(newToken);
-
-  res.json({
-    success: true,
-    token: newToken
-  });
+  res.json({ success: true });
 });
 
 app.post('/api/tokens/:token/toggle', requireAdminPassword, (req, res) => {
-  const tokenData = tokens.find(t => t.token === req.params.token);
-
-  if (!tokenData) {
-    return res.status(404).json({
-      success: false,
-      error: 'Token não encontrado'
-    });
-  }
-
-  tokenData.active = !tokenData.active;
-
-  res.json({
-    success: true,
-    token: tokenData
-  });
+  const t = tokens.find(x => x.token === req.params.token);
+  if (!t) return res.status(404).json({ success: false });
+  t.active = !t.active;
+  res.json({ success: true });
 });
 
 app.delete('/api/tokens/:token', requireAdminPassword, (req, res) => {
-  const index = tokens.findIndex(t => t.token === req.params.token);
-
-  if (index === -1) {
-    return res.status(404).json({
-      success: false,
-      error: 'Token não encontrado'
-    });
-  }
-
-  tokens.splice(index, 1);
-
-  res.json({
-    success: true,
-    message: 'Token removido'
-  });
+  tokens = tokens.filter(t => t.token !== req.params.token);
+  res.json({ success: true });
 });
 
-// ==================== ROTAS PÚBLICAS ====================
-app.get('/api/validate-token', (req, res) => {
-  const { token } = req.query;
+// ================= PAINEL VISUAL =================
+app.get('/panel', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Painel Tokens</title>
+<style>
+body { font-family: Arial; background:#111; color:#fff; padding:20px }
+.card { background:#1f1f1f; padding:20px; border-radius:8px; margin-bottom:20px }
+input, button { padding:10px; margin:5px 0; width:100% }
+button { background:#4f46e5; color:white; border:none; cursor:pointer }
+table { width:100%; margin-top:10px }
+td, th { padding:8px; border-bottom:1px solid #333 }
+</style>
+</head>
+<body>
 
-  if (!token) return res.json({ valid: false });
+<h1>🔐 Painel de Tokens</h1>
 
-  const tokenData = tokens.find(t => t.token === token);
+<div class="card">
+  <h3>Criar Token</h3>
+  <input id="token" placeholder="Token">
+  <input id="userId" placeholder="User ID">
+  <input id="name" placeholder="Nome">
+  <button onclick="create()">Criar</button>
+</div>
 
-  if (!tokenData || !tokenData.active) {
-    return res.json({ valid: false });
+<div class="card">
+  <h3>Tokens</h3>
+  <table id="table"></table>
+</div>
+
+<script>
+const password = prompt('Senha do painel');
+
+function headers() {
+  return {
+    'Content-Type':'application/json',
+    'x-admin-password': password
   }
+}
 
-  if (new Date() > new Date(tokenData.expiresAt)) {
-    return res.json({ valid: false });
-  }
-
-  res.json({
-    valid: true,
-    userId: tokenData.userId,
-    name: tokenData.name,
-    expiresAt: tokenData.expiresAt
+async function load() {
+  const r = await fetch('/api/tokens', { headers: headers() });
+  const d = await r.json();
+  const t = document.getElementById('table');
+  t.innerHTML = '<tr><th>Token</th><th>Nome</th><th>Status</th><th>Ações</th></tr>';
+  d.tokens.forEach(x => {
+    t.innerHTML += \`
+      <tr>
+        <td>\${x.token}</td>
+        <td>\${x.name}</td>
+        <td>\${x.active ? 'Ativo' : 'Inativo'}</td>
+        <td>
+          <button onclick="toggle('\${x.token}')">Toggle</button>
+          <button onclick="remove('\${x.token}')">Excluir</button>
+        </td>
+      </tr>
+    \`
   });
+}
+
+async function create() {
+  await fetch('/api/tokens', {
+    method:'POST',
+    headers: headers(),
+    body: JSON.stringify({
+      token: token.value,
+      userId: userId.value,
+      name: name.value
+    })
+  });
+  load();
+}
+
+async function toggle(t) {
+  await fetch('/api/tokens/'+t+'/toggle', {
+    method:'POST',
+    headers: headers()
+  });
+  load();
+}
+
+async function remove(t) {
+  await fetch('/api/tokens/'+t, {
+    method:'DELETE',
+    headers: headers()
+  });
+  load();
+}
+
+load();
+</script>
+
+</body>
+</html>
+`);
 });
 
-app.get('/api/get-ids', (req, res) => {
-  res.json({
-    success: true,
-    replacements: replacementConfigs.filter(r => r.active)
-  });
-});
-
-// ==================== FAVICON (EVITA 404) ====================
-app.get('/favicon.ico', (req, res) => res.status(204).end());
-
-// ==================== ROOT ====================
+// ================= ROOT =================
 app.get('/', (req, res) => {
   res.send('🚀 Token API Online');
 });
 
-// ==================== 404 ====================
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Rota não encontrada',
-    path: req.path
-  });
+// ================= START =================
+app.listen(PORT, () => {
+  console.log('Servidor online na porta', PORT);
 });
-
-// ==================== ERROR ====================
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({
-    error: 'Erro interno do servidor'
-  });
-});
-
-// ==================== START ====================
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor online na porta ${PORT}`);
-});
-
-// ==================== SHUTDOWN ====================
-process.on('SIGINT', () => {
-  server.close(() => process.exit(0));
-});
-
-module.exports = app;
