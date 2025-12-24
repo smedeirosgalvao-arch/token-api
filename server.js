@@ -2,18 +2,18 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 
-// ==================== CONFIGURAÇÃO ====================
+// ==================== CONFIG ====================
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// ==================== AUTH SIMPLES (SEM SESSÃO) ====================
+// ==================== AUTH SIMPLES ====================
 const ADMIN_PASSWORD = 'Manuela9';
 
 function requireAdminPassword(req, res, next) {
   const password =
     req.headers['x-admin-password'] ||
-    req.query.password ||
-    req.body?.password;
+    req.body?.password ||
+    req.query?.password;
 
   if (password !== ADMIN_PASSWORD) {
     return res.status(401).json({
@@ -21,11 +21,10 @@ function requireAdminPassword(req, res, next) {
       error: 'Senha administrativa inválida'
     });
   }
-
   next();
 }
 
-// ==================== CORS ====================
+// ==================== MIDDLEWARE ====================
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
@@ -44,7 +43,7 @@ let tokens = [
     name: 'Usuário Demo',
     active: true,
     createdAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+    expiresAt: new Date(Date.now() + 365 * 86400000).toISOString()
   }
 ];
 
@@ -61,15 +60,31 @@ const replacementConfigs = [
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
-    uptime: process.uptime(),
     environment: NODE_ENV,
+    uptime: process.uptime(),
     timestamp: new Date().toISOString()
   });
 });
 
-// ==================== TOKENS (ADMIN) ====================
+// ==================== LOGIN (FAKE – SENHA FIXA) ====================
+app.post('/api/login', (req, res) => {
+  const { password } = req.body;
 
-// Listar tokens
+  if (password !== ADMIN_PASSWORD) {
+    return res.status(401).json({
+      success: false,
+      error: 'Senha inválida'
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Login realizado com sucesso (senha fixa)',
+    admin: true
+  });
+});
+
+// ==================== TOKENS (ADMIN) ====================
 app.get('/api/tokens', requireAdminPassword, (req, res) => {
   res.json({
     success: true,
@@ -78,7 +93,6 @@ app.get('/api/tokens', requireAdminPassword, (req, res) => {
   });
 });
 
-// Criar token
 app.post('/api/tokens', requireAdminPassword, (req, res) => {
   const { token, userId, name, expiresInDays = 365 } = req.body;
 
@@ -116,7 +130,6 @@ app.post('/api/tokens', requireAdminPassword, (req, res) => {
   });
 });
 
-// Ativar / Desativar
 app.post('/api/tokens/:token/toggle', requireAdminPassword, (req, res) => {
   const tokenData = tokens.find(t => t.token === req.params.token);
 
@@ -135,7 +148,6 @@ app.post('/api/tokens/:token/toggle', requireAdminPassword, (req, res) => {
   });
 });
 
-// Remover token
 app.delete('/api/tokens/:token', requireAdminPassword, (req, res) => {
   const index = tokens.findIndex(t => t.token === req.params.token);
 
@@ -154,15 +166,11 @@ app.delete('/api/tokens/:token', requireAdminPassword, (req, res) => {
   });
 });
 
-// ==================== TOKEN PÚBLICO ====================
-
-// Validar token (SEM senha)
+// ==================== ROTAS PÚBLICAS ====================
 app.get('/api/validate-token', (req, res) => {
   const { token } = req.query;
 
-  if (!token) {
-    return res.json({ valid: false });
-  }
+  if (!token) return res.json({ valid: false });
 
   const tokenData = tokens.find(t => t.token === token);
 
@@ -182,7 +190,6 @@ app.get('/api/validate-token', (req, res) => {
   });
 });
 
-// IDs (SEM senha)
 app.get('/api/get-ids', (req, res) => {
   res.json({
     success: true,
@@ -190,55 +197,33 @@ app.get('/api/get-ids', (req, res) => {
   });
 });
 
-// ==================== PAINEL HTML ====================
+// ==================== FAVICON (EVITA 404) ====================
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+// ==================== ROOT ====================
 app.get('/', (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>Painel VIP</title>
-</head>
-<body>
-<h2>Painel de Tokens</h2>
-
-<script>
-const ADMIN_PASSWORD = prompt('🔐 Senha do painel');
-
-function headers() {
-  return {
-    'Content-Type': 'application/json',
-    'x-admin-password': ADMIN_PASSWORD
-  };
-}
-
-async function listar() {
-  const r = await fetch('/api/tokens', { headers: headers() });
-  const d = await r.json();
-  console.log(d);
-}
-
-listar();
-</script>
-</body>
-</html>
-  `);
+  res.send('🚀 Token API Online');
 });
 
 // ==================== 404 ====================
 app.use((req, res) => {
-  res.status(404).json({ error: 'Rota não encontrada' });
+  res.status(404).json({
+    error: 'Rota não encontrada',
+    path: req.path
+  });
 });
 
-// ==================== ERRO ====================
+// ==================== ERROR ====================
 app.use((err, req, res, next) => {
   console.error(err);
-  res.status(500).json({ error: 'Erro interno' });
+  res.status(500).json({
+    error: 'Erro interno do servidor'
+  });
 });
 
 // ==================== START ====================
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor online na porta ${PORT}`);
 });
 
 // ==================== SHUTDOWN ====================
